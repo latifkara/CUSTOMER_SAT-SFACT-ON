@@ -1,6 +1,7 @@
 import pandas as pd
 from zenml import step
 import logging
+from sklearn.preprocessing import RobustScaler as SklearnRobustScaler
 
 
 class RobustScaler:
@@ -9,10 +10,15 @@ class RobustScaler:
     """
     def __init__(self, df: pd.DataFrame):
         self.df = df
-        self.scaler = RobustScaler()
 
     def transform(self):
-        self.df = self.scaler.fit_transform(self.df)
+        scaler = SklearnRobustScaler()
+        scaled_data = scaler.fit_transform(self.df)
+        self.df = pd.DataFrame(
+            scaled_data, 
+            columns=self.df.columns, 
+            index=self.df.index
+        )
         return self.df
 
 @step

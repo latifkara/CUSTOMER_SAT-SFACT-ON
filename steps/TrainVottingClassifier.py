@@ -2,6 +2,7 @@ import pandas as pd
 from zenml import step
 import logging
 from sklearn.ensemble import VotingClassifier
+from src.TrainTestSplit import TrainTestSplit
 
 class TrainVottingClassifier:
     """
@@ -13,10 +14,10 @@ class TrainVottingClassifier:
     Returns:
         A voting classifier
     """
-    def __init__(self, models: dict, X_train: pd.DataFrame, y_train: pd.DataFrame):
+    def __init__(self, models: dict, split:TrainTestSplit):
         self.models = models
-        self.X_train = X_train
-        self.y_train = y_train
+        self.X_train = split.X_train
+        self.y_train = split.y_train
 
     def train_votting_classifier(self):
         dt_model = self.models['DT']
@@ -36,7 +37,7 @@ class TrainVottingClassifier:
         return voting_clf
         
 @step
-def train_votting_classifier(models: dict, X_train: pd.DataFrame, y_train: pd.DataFrame) -> pd.DataFrame:
+def train_votting_classifier(models: dict, split: TrainTestSplit) -> VotingClassifier:
     """
     Train a votting classifier
     Args:
@@ -46,5 +47,5 @@ def train_votting_classifier(models: dict, X_train: pd.DataFrame, y_train: pd.Da
     Returns:
         A voting classifier
     """
-    train_votting_classifier = TrainVottingClassifier(models, X_train, y_train)
+    train_votting_classifier = TrainVottingClassifier(models, split)
     return train_votting_classifier.train_votting_classifier()
