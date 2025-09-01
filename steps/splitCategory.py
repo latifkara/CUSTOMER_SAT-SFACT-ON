@@ -27,6 +27,7 @@ class SplitCategory:
 
         cat_cols = cat_cols + num_but_cat
         cat_cols = [col for col in cat_cols if col not in cat_but_car]
+        cat_cols = [col for col in cat_cols if col != 'TARGET']
 
         #Number Columns
         num_cols = [col for col in self.df.columns if self.df[col].dtypes != "O"]

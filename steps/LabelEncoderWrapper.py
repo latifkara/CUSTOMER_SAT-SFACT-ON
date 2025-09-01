@@ -13,28 +13,31 @@ class LabelEncoderWrapper(BaseEstimator, TransformerMixin):
     Returns:
         pd.DataFrame with label encoded columns
     """
-    def __init__(self):
+    def __init__(self, X, cat_cols):
         self.encoders_ = {}
         self.columns_ = None
+        self.X = X.copy()
+        self.binary_cols = [col for col in cat_cols if self.X[col].nunique() == 2]
+        self.X = X[self.binary_cols]
 
-    def fit(self, X, y=None):
-        X = X.copy()
-        for col in X.columns:
+
+    def fit(self, y=None):
+
+        for col in self.X.columns:
             le = LabelEncoder()
-            le.fit(X[col].astype(str))
+            le.fit(self.X[col].astype(str))
             self.encoders_[col] = le
         return self
 
-    def transform(self, X):
-        X = X.copy()
-        for col in X.columns:
+    def transform(self):
+        for col in self.X.columns:
             le = self.encoders_.get(col)
             if le:
-                X[col] = le.transform(X[col].astype(str))  # Transform using stored encoder
-        return X
+                self.X[col] = le.transform(self.X[col].astype(str))  # Transform using stored encoder
+        return self.X
 
 @step
-def label_encoder_wrapper(df: pd.DataFrame) -> pd.DataFrame:
+def label_encoder_wrapper(df: pd.DataFrame, cat_cols: list) -> pd.DataFrame:
     """
     LabelEncoderWrapper
     Args:
@@ -42,5 +45,5 @@ def label_encoder_wrapper(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame with label encoded columns
     """
-    label_encoder_wrapper = LabelEncoderWrapper()
-    return label_encoder_wrapper.transform(df)
+    label_encoder_wrapper = LabelEncoderWrapper(df, cat_cols)
+    return label_encoder_wrapper.transform()

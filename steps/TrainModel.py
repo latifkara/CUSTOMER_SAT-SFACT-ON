@@ -70,4 +70,4 @@ def train_model(df: pd.DataFrame) -> pd.DataFrame:
         A pandas DataFrame
     """
     train_model = TrainModel(df)
-    return train_model.train_model()
+    return train_model.train_model(), train_model.split_data()
