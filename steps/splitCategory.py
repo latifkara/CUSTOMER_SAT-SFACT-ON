@@ -111,3 +111,9 @@ def get_categorical_data(df: pd.DataFrame, column_info: dict) -> pd.DataFrame:
     """Extract categorical columns from dataframe"""
     cat_cols = column_info["cat_cols"]
     return df[cat_cols] if cat_cols else pd.DataFrame()
+
+@step  
+def get_cardinal_data(df: pd.DataFrame, column_info: dict) -> pd.DataFrame:
+    """Extract categorical columns from dataframe"""
+    cat_but_car = column_info["cat_but_car"]
+    return df[cat_but_car] if cat_but_car else pd.DataFrame()

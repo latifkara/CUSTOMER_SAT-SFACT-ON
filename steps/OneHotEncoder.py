@@ -25,7 +25,7 @@ def one_hot_encoder(df: pd.DataFrame, column_info: Dict[str, Any]) -> pd.DataFra
         return df_encoded
     
     # Apply one-hot encoding
-    encoder = OneHotEncoder(sparse_output=False, drop='first', handle_unknown='ignore')
+    encoder = OneHotEncoder(drop='first', handle_unknown='ignore', sparse_output=False)
     
     # Get the categorical data
     cat_data = df_encoded[non_binary_cols]
@@ -33,13 +33,8 @@ def one_hot_encoder(df: pd.DataFrame, column_info: Dict[str, Any]) -> pd.DataFra
     # Fit and transform
     encoded_array = encoder.fit_transform(cat_data)
     
-    # Create column names for encoded features
-    encoded_feature_names = []
-    for i, col in enumerate(non_binary_cols):
-        categories = encoder.categories_[i]
-        # Skip first category (dropped)
-        for cat in categories[1:]:
-            encoded_feature_names.append(f"{col}_{cat}")
+    # Get feature names using get_feature_names_out()
+    encoded_feature_names = encoder.get_feature_names_out(non_binary_cols)
     
     # Create DataFrame with encoded features
     encoded_df = pd.DataFrame(
@@ -56,4 +51,3 @@ def one_hot_encoder(df: pd.DataFrame, column_info: Dict[str, Any]) -> pd.DataFra
     logging.info(f"Created {len(encoded_feature_names)} new encoded features")
     
     return df_final
-

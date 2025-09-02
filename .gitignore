@@ -1,2 +1,22 @@
 data/
 *.csv
+
+# Python derleme ve cache dosyaları
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Sistem dosyaları
+.DS_Store
+Thumbs.db
+
+# IDE ve editör dosyaları
+.vscode/
+.idea/
+
+# Sanal ortam
+env/
+venv/
+*.egg-info/
+dist/
+build/

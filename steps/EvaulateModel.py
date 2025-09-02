@@ -1,23 +1,30 @@
 import pandas as pd
 from zenml import step
 import logging
-from src.TrainTestSplit import TrainTestSplit
+from src.TrainTestSplitData import TrainTestSplitData
+from sklearn.ensemble import VotingClassifier
 
 class EvaulateModel:
     """
-    Evaulate a model
+    Evaluate a model
     """
-    def __init__(self, model: pd.DataFrame, split: TrainTestSplit):
+    def __init__(self, model: VotingClassifier, split: TrainTestSplitData):
         self.model = model
-        self.x_test = split.x_test
+        self.X_test = split.X_test
         self.y_test = split.y_test
 
     def evaluate_model(self):
-        logging.info(f"Evaluating model...")
-        return self.model.score(self.x_test, self.y_test)
+        logging.info("Evaluating model...")
+        
+        score = self.model.score(self.X_test, self.y_test)
+        
+        # Tek skor değerini DataFrame'e çevir
+        df = pd.DataFrame({"Score": [score]})
+        return df
+
 
 @step
-def evaluate_model(model: pd.DataFrame, split: TrainTestSplit) -> pd.DataFrame:
+def evaluate_model(model: VotingClassifier, split: TrainTestSplitData) -> pd.DataFrame:
     """
     Evaulate a model
     """

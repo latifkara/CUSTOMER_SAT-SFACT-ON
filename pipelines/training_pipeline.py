@@ -1,7 +1,7 @@
 # training_pipeline.py
 from zenml import pipeline  
 from steps.ingestData import ingest_data
-from steps.splitCategory import split_category, get_numerical_data, get_categorical_data
+from steps.splitCategory import split_category, get_numerical_data, get_categorical_data, get_cardinal_data
 from steps.HandleCategoricalMissingValues import handle_categorical_missing_values
 from steps.HandleNumericalMissingValue import handle_numerical_missing_values
 from steps.HandleOutlier import handle_outlier
@@ -20,12 +20,16 @@ def training_pipeline(data_path: str):
     # Ingest data
     ingest_data_out = ingest_data(data_path)
     
+    # split_category(ingest_data_out)
+    # train_model(ingest_data_out)
+
     # Split columns into different categories (returns a dictionary)
     column_info = split_category(ingest_data_out)
     
     # Extract numerical and categorical data
     numerical_data = get_numerical_data(ingest_data_out, column_info)
     categorical_data = get_categorical_data(ingest_data_out, column_info)
+    cordinal_data = get_cardinal_data(ingest_data_out, column_info)
     
     # Process numerical data
     handle_numerical_missing_value_out = handle_numerical_missing_values(numerical_data)
@@ -36,7 +40,7 @@ def training_pipeline(data_path: str):
     handle_categorical_missing_value_out = handle_categorical_missing_values(categorical_data)
     
     # Merge processed data
-    merge_cols_out = merge_cols(robust_scaler_out, handle_categorical_missing_value_out)
+    merge_cols_out = merge_cols(robust_scaler_out, handle_categorical_missing_value_out, cordinal_data)
     
     # Encode categorical variables - you'll need to pass the column info to these steps too
     label_encoder_wrapper_out = label_encoder_wrapper(merge_cols_out, column_info)
@@ -50,6 +54,5 @@ def training_pipeline(data_path: str):
     train_votting_classifier_out = train_votting_classifier(train_model_out, train_test_split)
     
     # Evaluate model
-    evaluate_model_out = evaluate_model(train_votting_classifier_out, train_test_split)
+    return train_votting_classifier_out
 
-    return evaluate_model_out
