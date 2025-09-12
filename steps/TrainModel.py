@@ -2,6 +2,7 @@ from tkinter import N
 import pandas as pd
 from zenml import step
 import logging
+import mlflow
 from sklearn.metrics import accuracy_score
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier 
@@ -10,18 +11,17 @@ from lightgbm import LGBMClassifier
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Dict, Any, List, Tuple
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder
 import numpy as np
 from src.TrainTestSplitData import TrainTestSplitData
+from zenml.client import Client
 
+experiment_tracker = Client().active_stack.experiment_tracker
 
 class TrainModel:
     """
-    Train multiple models with categorical data preprocessing and feature selection
+    Train multiple models on preprocessed data
     Args:
-        split: TrainTestSplitData containing train/test data
+        split: TrainTestSplitData containing preprocessed train/test data
     Returns:
         Dictionary of trained models
     """
@@ -29,8 +29,6 @@ class TrainModel:
         self.split = split
         self.models: Dict[str, Any] = {}
         self.importance_features: Dict[str, List[str]] = {}
-        self.preprocessors: Dict[str, Any] = {}
-        self.processed_feature_names: List[str] = []
         
         # Initialize classifiers
         self.classifiers = [
@@ -40,151 +38,42 @@ class TrainModel:
                 use_label_encoder=False, 
                 eval_metric='logloss', 
                 random_state=42,
-                verbosity=0,
-                enable_categorical=True  # Enable categorical support
+                verbosity=0
             )),
             ('LightGBM', LGBMClassifier(
                 random_state=42, 
                 verbose=-1,
-                objective='binary',  # Adjust based on your problem type
+                objective='binary',
                 force_col_wise=True
             ))
         ]
 
-    def identify_column_types(self, df: pd.DataFrame) -> Tuple[List[str], List[str]]:
+    def ensure_numeric_data(self, X: pd.DataFrame) -> np.ndarray:
         """
-        Identify numerical and categorical columns
+        Ensure data is in proper numeric format for training
         """
-        numerical_cols = []
-        categorical_cols = []
-        
-        for col in df.columns:
-            if df[col].dtype in ['object', 'category']:
-                categorical_cols.append(col)
-            elif df[col].dtype in ['int64', 'float64', 'int32', 'float32', 'bool']:
-                numerical_cols.append(col)
+        try:
+            # Convert to numpy array if it's a DataFrame
+            if isinstance(X, pd.DataFrame):
+                # Check for any remaining non-numeric columns
+                non_numeric_cols = X.select_dtypes(exclude=[np.number]).columns
+                if len(non_numeric_cols) > 0:
+                    logging.warning(f"Found non-numeric columns after preprocessing: {list(non_numeric_cols)}")
+                    # Convert to numeric where possible, errors='coerce' will turn invalid values to NaN
+                    for col in non_numeric_cols:
+                        X[col] = pd.to_numeric(X[col], errors='coerce')
+                    
+                    # Fill any NaN values created during conversion
+                    X = X.fillna(0)
+                
+                return X.values
             else:
-                # Handle other dtypes
-                if df[col].nunique() < 20:  # Assume categorical if few unique values
-                    categorical_cols.append(col)
-                else:
-                    numerical_cols.append(col)
-        
-        logging.info(f"Identified {len(numerical_cols)} numerical columns and {len(categorical_cols)} categorical columns")
-        logging.info(f"Categorical columns: {categorical_cols[:10]}...")  # Show first 10
-        
-        return numerical_cols, categorical_cols
-
-    def preprocess_data(self, X_train: pd.DataFrame, X_test: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, List[str]]:
-        """
-        Preprocess the data to handle categorical variables
-        """
-        try:
-            logging.info("Starting data preprocessing...")
-            
-            # Identify column types
-            numerical_cols, categorical_cols = self.identify_column_types(X_train)
-            
-            if not categorical_cols:
-                # No categorical columns, return as is
-                logging.info("No categorical columns found, returning original data")
-                return X_train.values, X_test.values, list(X_train.columns)
-            
-            # Handle missing values in categorical columns
-            for col in categorical_cols:
-                X_train[col] = X_train[col].fillna('Unknown')
-                X_test[col] = X_test[col].fillna('Unknown')
-            
-            # Handle missing values in numerical columns
-            for col in numerical_cols:
-                X_train[col] = X_train[col].fillna(X_train[col].median())
-                X_test[col] = X_test[col].fillna(X_train[col].median())  # Use train median for test
-            
-            # Create preprocessing pipeline
-            preprocessor = ColumnTransformer(
-                transformers=[
-                    ('num', StandardScaler(), numerical_cols),
-                    ('cat', OneHotEncoder(drop='first', handle_unknown='ignore'), categorical_cols)
-                ],
-                remainder='passthrough'
-            )
-            
-            # Fit preprocessor on training data
-            logging.info("Fitting preprocessor...")
-            X_train_processed = preprocessor.fit_transform(X_train)
-            X_test_processed = preprocessor.transform(X_test)
-            
-            # Get feature names after preprocessing
-            feature_names = []
-            
-            # Numerical feature names (same as original)
-            feature_names.extend(numerical_cols)
-            
-            # Categorical feature names (after one-hot encoding)
-            if categorical_cols:
-                cat_encoder = preprocessor.named_transformers_['cat']
-                cat_feature_names = cat_encoder.get_feature_names_out(categorical_cols)
-                feature_names.extend(cat_feature_names)
-            
-            # Store preprocessor for later use
-            self.preprocessors['main'] = preprocessor
-            
-            logging.info(f"Preprocessing completed. Shape: {X_train_processed.shape}")
-            logging.info(f"Feature count: {len(feature_names)}")
-            
-            return X_train_processed, X_test_processed, feature_names
-            
+                # Already a numpy array
+                return X
         except Exception as e:
-            logging.error(f"Error in preprocessing: {str(e)}")
-            # Fallback: try simple label encoding
-            return self.simple_preprocessing(X_train, X_test)
-
-    def simple_preprocessing(self, X_train: pd.DataFrame, X_test: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, List[str]]:
-        """
-        Simple preprocessing using label encoding as fallback
-        """
-        try:
-            logging.info("Using simple label encoding as fallback...")
-            
-            X_train_copy = X_train.copy()
-            X_test_copy = X_test.copy()
-            
-            # Identify categorical columns
-            categorical_cols = X_train_copy.select_dtypes(include=['object', 'category']).columns
-            
-            # Apply label encoding to categorical columns
-            label_encoders = {}
-            for col in categorical_cols:
-                le = LabelEncoder()
-                
-                # Handle missing values
-                X_train_copy[col] = X_train_copy[col].fillna('Unknown')
-                X_test_copy[col] = X_test_copy[col].fillna('Unknown')
-                
-                # Fit on combined data to ensure consistent encoding
-                combined_data = pd.concat([X_train_copy[col], X_test_copy[col]])
-                le.fit(combined_data)
-                
-                X_train_copy[col] = le.transform(X_train_copy[col])
-                X_test_copy[col] = le.transform(X_test_copy[col])
-                
-                label_encoders[col] = le
-            
-            # Store encoders
-            self.preprocessors['label_encoders'] = label_encoders
-            
-            # Handle missing values in numerical columns
-            numerical_cols = X_train_copy.select_dtypes(include=[np.number]).columns
-            for col in numerical_cols:
-                X_train_copy[col] = X_train_copy[col].fillna(X_train_copy[col].median())
-                X_test_copy[col] = X_test_copy[col].fillna(X_train_copy[col].median())
-            
-            logging.info("Simple preprocessing completed")
-            return X_train_copy.values, X_test_copy.values, list(X_train_copy.columns)
-            
-        except Exception as e:
-            logging.error(f"Error in simple preprocessing: {str(e)}")
-            raise
+            logging.error(f"Error in ensure_numeric_data: {str(e)}")
+            # Fallback: try to convert directly
+            return np.array(X, dtype=np.float32)
 
     def plot_importance(self, importance, feature_names, num=10, save=False):
         """
@@ -198,9 +87,16 @@ class TrainModel:
             List of top feature names
         """
         try:
+            # Ensure we have feature names
+            if feature_names is None or len(feature_names) == 0:
+                feature_names = [f'feature_{i}' for i in range(len(importance))]
+            
+            # Ensure we don't request more features than available
+            num = min(num, len(importance), len(feature_names))
+            
             feature_imp = pd.DataFrame({
-                'Value': importance, 
-                'Feature': feature_names
+                'Value': importance[:len(feature_names)], 
+                'Feature': feature_names[:len(importance)]
             })
             
             # Sort by importance
@@ -220,7 +116,7 @@ class TrainModel:
         except Exception as e:
             logging.error(f"Error in plot_importance: {str(e)}")
             # Return first num features if importance plotting fails
-            return feature_names[:num]
+            return feature_names[:num] if feature_names else []
 
     def create_fresh_classifier(self, name: str):
         """
@@ -235,8 +131,7 @@ class TrainModel:
                 use_label_encoder=False, 
                 eval_metric='logloss', 
                 random_state=42,
-                verbosity=0,
-                enable_categorical=True
+                verbosity=0
             )
         elif name == 'LightGBM':
             return LGBMClassifier(
@@ -250,37 +145,48 @@ class TrainModel:
 
     def train_model(self) -> Dict[str, Any]:
         """
-        Train all models with preprocessing and feature selection
+        Train all models on preprocessed data
         Returns:
             Dictionary of trained models with metadata
         """
         try:
-            logging.info("Starting model training process...")
-            logging.info(f"Original training data shape: {self.split.X_train.shape}")
-            logging.info(f"Original test data shape: {self.split.X_test.shape}")
+            logging.info("Starting model training on preprocessed data...")
+            logging.info(f"Training data shape: {self.split.X_train.shape}")
+            logging.info(f"Test data shape: {self.split.X_test.shape}")
+            logging.info(f"Target variable shape: {self.split.y_train.shape}")
             
-            # Preprocess the data
-            X_train_processed, X_test_processed, feature_names = self.preprocess_data(
-                self.split.X_train.copy(), 
-                self.split.X_test.copy()
-            )
+            # Ensure data is in proper format for training
+            X_train_processed = self.ensure_numeric_data(self.split.X_train)
+            X_test_processed = self.ensure_numeric_data(self.split.X_test)
             
-            # Store processed feature names
-            self.processed_feature_names = feature_names
+            # Ensure y_train is in proper format (1D array)
+            y_train = np.array(self.split.y_train).ravel()
             
-            logging.info(f"Processed training data shape: {X_train_processed.shape}")
-            logging.info(f"Processed test data shape: {X_test_processed.shape}")
+            logging.info(f"After conversion - X_train shape: {X_train_processed.shape}")
+            logging.info(f"After conversion - y_train shape: {y_train.shape}")
+            
+            # Get feature names
+            if hasattr(self.split.X_train, 'columns'):
+                feature_names = list(self.split.X_train.columns)
+            else:
+                feature_names = [f'feature_{i}' for i in range(X_train_processed.shape[1])]
+            
+            logging.info(f"Number of features: {len(feature_names)}")
             
             # Step 1: Train initial models to get feature importance
             logging.info("Step 1: Training models for feature importance...")
             initial_models = {}
-            
+
             for name, classifier in self.classifiers:
                 logging.info(f"Training initial {name} model...")
                 try:
-                    model = classifier.fit(X_train_processed, self.split.y_train)
+                    # Disable autolog temporarily to avoid the Series issue
+                    mlflow.sklearn.autolog(disable=True)
+                    
+                    model = classifier.fit(X_train_processed, y_train)
                     initial_models[name] = model
                     logging.info(f"{name} trained successfully")
+                    
                 except Exception as e:
                     logging.error(f"Error training {name}: {str(e)}")
                     continue
@@ -323,7 +229,14 @@ class TrainModel:
                         logging.info(f"Retraining {name} with {len(selected_feature_names)} features...")
                         
                         # Get indices of selected features
-                        selected_indices = [feature_names.index(fname) for fname in selected_feature_names if fname in feature_names]
+                        selected_indices = []
+                        for fname in selected_feature_names:
+                            try:
+                                idx = feature_names.index(fname)
+                                selected_indices.append(idx)
+                            except ValueError:
+                                logging.warning(f"Feature {fname} not found in feature names")
+                                continue
                         
                         if not selected_indices:
                             logging.warning(f"No valid feature indices found for {name}, using all features")
@@ -335,7 +248,7 @@ class TrainModel:
                         new_classifier = self.create_fresh_classifier(name)
                         
                         # Train with selected features
-                        trained_model = new_classifier.fit(X_train_selected, self.split.y_train)
+                        trained_model = new_classifier.fit(X_train_selected, y_train)
                         
                         # Store the trained model
                         self.models[name] = trained_model
@@ -361,8 +274,7 @@ class TrainModel:
             return {
                 'models': self.models,
                 'feature_importance': self.importance_features,
-                'preprocessors': self.preprocessors,
-                'processed_feature_names': self.processed_feature_names,
+                'feature_names': feature_names,
                 'processed_data': {
                     'X_train': X_train_processed,
                     'X_test': X_test_processed
@@ -373,7 +285,7 @@ class TrainModel:
             logging.error(f"Error in train_model: {str(e)}")
             raise
 
-    def get_model_performance(self, X_train_processed: np.ndarray) -> Dict[str, float]:
+    def get_model_performance(self, X_train_processed: np.ndarray, y_train: np.ndarray, feature_names: List[str]) -> Dict[str, float]:
         """
         Evaluate model performance on training data
         Returns:
@@ -386,9 +298,13 @@ class TrainModel:
                 selected_feature_names = self.importance_features[name]
                 
                 # Get indices of selected features
-                selected_indices = [self.processed_feature_names.index(fname) 
-                                  for fname in selected_feature_names 
-                                  if fname in self.processed_feature_names]
+                selected_indices = []
+                for fname in selected_feature_names:
+                    try:
+                        idx = feature_names.index(fname)
+                        selected_indices.append(idx)
+                    except ValueError:
+                        continue
                 
                 if selected_indices:
                     X_selected = X_train_processed[:, selected_indices]
@@ -396,7 +312,7 @@ class TrainModel:
                     X_selected = X_train_processed
                 
                 y_pred = model.predict(X_selected)
-                accuracy = accuracy_score(self.split.y_train, y_pred)
+                accuracy = accuracy_score(y_train, y_pred)
                 performance[name] = accuracy
                 
                 logging.info(f"{name} training accuracy: {accuracy:.4f}")
@@ -408,24 +324,31 @@ class TrainModel:
         return performance
 
 
-@step
+@step(experiment_tracker=experiment_tracker.name)
 def train_model(split: TrainTestSplitData) -> Dict[str, Any]:
     """
-    Train multiple models with preprocessing and feature selection
+    Train multiple models on preprocessed data
     Args:
-        split: TrainTestSplitData containing X_train, X_test, y_train, y_test
+        split: TrainTestSplitData containing preprocessed X_train, X_test, y_train, y_test
     Returns:
-        Dictionary containing trained models, preprocessing info, and performance metrics
+        Dictionary containing trained models and performance metrics
     """
     try:
-        logging.info("Initializing TrainModel with preprocessing...")
+        logging.info("Initializing TrainModel for preprocessed data...")
         trainer = TrainModel(split)
         
         # Train the models
         result = trainer.train_model()
         
+        # Ensure y_train is in proper format for performance evaluation
+        y_train = np.array(split.y_train).ravel()
+        
         # Log performance
-        performance = trainer.get_model_performance(result['processed_data']['X_train'])
+        performance = trainer.get_model_performance(
+            result['processed_data']['X_train'], 
+            y_train,
+            result['feature_names']
+        )
         logging.info("Model Performance Summary:")
         for name, acc in performance.items():
             logging.info(f"  {name}: {acc:.4f}")

@@ -13,8 +13,8 @@ class LabelEncoderWrapper(BaseEstimator, TransformerMixin):
     Returns:
         pd.DataFrame with label encoded binary columns
     """
-    def __init__(self, cat_cols: List[str] = None):
-        self.cat_cols = cat_cols or []
+    def __init__(self, columns: List[str]):
+        self.columns = columns
         self.encoders_ = {}
         self.binary_cols = []
 
@@ -22,7 +22,7 @@ class LabelEncoderWrapper(BaseEstimator, TransformerMixin):
         """
         Fit label encoders for binary categorical columns
         """
-        self.binary_cols = [col for col in self.cat_cols if col in X.columns and X[col].nunique() == 2]
+        self.binary_cols = [col for col in self.columns if X[col].nunique() == 2]
         
         for col in self.binary_cols:
             le = LabelEncoder()
@@ -56,7 +56,7 @@ class LabelEncoderWrapper(BaseEstimator, TransformerMixin):
 
 # Method 1: Accept dictionary from split_category step
 @step
-def label_encoder_wrapper(df: pd.DataFrame, column_info: Dict[str, Any]) -> pd.DataFrame:
+def label_encoder_wrapper(df: pd.DataFrame) -> pd.DataFrame:
     """
     Apply label encoding to binary categorical columns
     Args:
@@ -65,9 +65,8 @@ def label_encoder_wrapper(df: pd.DataFrame, column_info: Dict[str, Any]) -> pd.D
     Returns:
         pd.DataFrame with label encoded binary columns
     """
-    cat_cols = column_info.get("cat_cols", [])
-    
-    encoder = LabelEncoderWrapper(cat_cols)
+    columns = df.columns.tolist()
+    encoder = LabelEncoderWrapper(columns)
     encoded_df = encoder.fit_transform(df)
     
     logging.info("Label encoding completed")

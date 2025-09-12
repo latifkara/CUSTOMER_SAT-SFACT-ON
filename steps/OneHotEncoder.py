@@ -5,7 +5,7 @@ import logging
 from typing import Dict, Any, List
 
 @step
-def one_hot_encoder(df: pd.DataFrame, column_info: Dict[str, Any]) -> pd.DataFrame:
+def one_hot_encoder(df: pd.DataFrame) -> pd.DataFrame:
     """
     Apply one-hot encoding to non-binary categorical columns
     Args:
@@ -14,11 +14,10 @@ def one_hot_encoder(df: pd.DataFrame, column_info: Dict[str, Any]) -> pd.DataFra
     Returns:
         pd.DataFrame with one-hot encoded categorical columns
     """
-    cat_cols = column_info.get("cat_cols", [])
     df_encoded = df.copy()
     
     # Find non-binary categorical columns (excluding those already label encoded)
-    non_binary_cols = [col for col in cat_cols if col in df.columns and df[col].nunique() > 2]
+    non_binary_cols = [col for col in df_encoded.columns if df[col].nunique() > 2]
     
     if not non_binary_cols:
         logging.info("No non-binary categorical columns found for one-hot encoding")
